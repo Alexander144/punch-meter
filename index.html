@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Punch Scoreboard</title>
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
+    import { getDatabase, ref, onValue, set, get } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-database.js";
+
+    const firebaseConfig = {
+      databaseURL: "https://boxing-707c0-default-rtdb.europe-west1.firebasedatabase.app/",
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const database = getDatabase(app);
+
+    const topScoreEl = document.getElementById("topScore");
+    const currentScoreEl = document.getElementById("currentScore");
+    const previousScoreEl = document.getElementById("previousScore");
+
+    let currentAnimatedValue = 0;
+    let topAnimatedValue = 0;
+    let previousAnimatedValue = 0;
+    let animationFrame;
+    let resetTimeout;
+
+    const animateScore = (target, currentG) => {
+      cancelAnimationFrame(animationFrame);
+      clearTimeout(resetTimeout);
+
+      const start = performance.now();
+      let duration = target === 0 ? 800 : 5500;
+      const initial = currentAnimatedValue;
+
+      function update(time) {
+        const progress = Math.min((time - start) / duration, 1);
+        const eased = progress < 0.5
+          ? 2 * progress * progress
+          : -1 + (4 - 2 * progress) * progress;
+        const value = Math.round(initial + (target - initial) * eased);
+        currentScoreEl.textContent = isNaN(value) ? 0 : value;
+        if (progress < 1) {
+          animationFrame = requestAnimationFrame(update);
+        } else {
+          currentAnimatedValue = target;
+
+          resetTimeout = setTimeout(async () => {
+            const currentGSnapshot = await get(ref(database, 'score/currentG'));
+            const currentGValue = currentGSnapshot.val() || 0;
+            if (currentGValue > 0) {
+              await set(ref(database, 'score/previousG'), currentGValue);
+              await set(ref(database, 'score/currentG'), 0);
+              animatePreviousScore(Math.round(currentGValue * 70));
+
+              currentAnimatedValue = 0;
+              currentScoreEl.textContent = '0';
+            }
+          }, 10000);
+        }
+      }
+
+      requestAnimationFrame(update);
+    };
+
+    const animateTopScore = (target) => {
+      const start = performance.now();
+      let duration = target === 0 ? 800 : 10000;
+      const initial = topAnimatedValue;
+
+      function update(time) {
+        const progress = Math.min((time - start) / duration, 1);
+        const eased = progress < 0.5
+          ? 2 * progress * progress
+          : -1 + (4 - 2 * progress) * progress;
+        const value = Math.round(initial + (target - initial) * eased);
+        topScoreEl.textContent = value;
+        if (progress < 1) {
+          requestAnimationFrame(update);
+        } else {
+          topAnimatedValue = target;
+        }
+      }
+
+      requestAnimationFrame(update);
+    };
+
+    const animatePreviousScore = (target) => {
+      const start = performance.now();
+      const duration = 800;
+      const initial = previousAnimatedValue;
+
+      function update(time) {
+        const progress = Math.min((time - start) / duration, 1);
+        const eased = progress < 0.5
+          ? 2 * progress * progress
+          : -1 + (4 - 2 * progress) * progress;
+        const value = Math.round(initial + (target - initial) * eased);
+        previousScoreEl.textContent = value;
+        if (progress < 1) {
+          requestAnimationFrame(update);
+        } else {
+          previousAnimatedValue = target;
+        }
+      }
+
+      requestAnimationFrame(update);
+    };
+
+    const scoreRef = ref(database, 'score');
+
+    onValue(scoreRef, (snapshot) => {
+      const data = snapshot.val() || {};
+      const currentG = data.currentG || 0;
+      const topG = data.topG || 0;
+      const previousG = data.previousG || 0;
+
+      // 🔥 Update topG in Firebase if currentG beats it
+      if (currentG > topG) {
+        set(ref(database, 'score/topG'), currentG);
+      }
+
+      animateTopScore(Math.round(Math.max(currentG, topG) * 70)); // Show highest immediately
+      animateScore(Math.round(currentG * 70), currentG);
+      animatePreviousScore(Math.round(previousG * 70));
+    });
+
+    document.getElementById("resetBtn").addEventListener("click", async () => {
+  clearTimeout(resetTimeout);        // 🛑 Stop the 10s timeout
+  cancelAnimationFrame(animationFrame);  // 🛑 Stop any ongoing animation
+
+  const currentGSnapshot = await get(ref(database, 'score/currentG'));
+  const currentGValue = currentGSnapshot.val() || 0;
+
+  if (currentGValue > 0) {
+    await set(ref(database, 'score/previousG'), currentGValue);
+    await set(ref(database, 'score/currentG'), 0);
+
+    animatePreviousScore(Math.round(currentGValue * 70));
+
+    currentAnimatedValue = 0;
+    currentScoreEl.textContent = '0';
+  }
+
+  // ⚡ Reset variables so no delayed update happens after reset
+  resetTimeout = null;
+});
+
+    document.getElementById("resetTopBtn").addEventListener("click", async () => {
+      await set(ref(database, 'score/topG'), 0);
+
+      topAnimatedValue = 0;
+      topScoreEl.textContent = '0';
+    });
+  </script>
+
+  <style>
+    @font-face {
+      font-family: 'Digital-7';
+      src: url('Digital7Italic-BW658.ttf') format('truetype');
+    }
+
+    body {
+      margin: 0;
+      background-color: #8b0000;
+      font-family: 'Digital-7', monospace;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+    }
+
+    .arcade-frame {
+      width: 50vh;
+      background: black;
+      padding: 70px 30px;
+      border: 20px solid #cc0000;
+      border-radius: 30px;
+      box-shadow: 0 0 40px #ff0000, inset 0 0 30px #660000;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    .label {
+      color: #ff3333;
+      font-size: 1.2rem;
+      margin-bottom: 10px;
+      letter-spacing: 2px;
+    }
+
+    #topScore {
+      font-size: 6rem;
+      color: #ff1a1a;
+      margin-bottom: 40px;
+    }
+
+    .previous-label {
+      color: #ff9999;
+      font-size: 1rem;
+      margin-bottom: 5px;
+      letter-spacing: 1px;
+    }
+
+    #previousScore {
+      font-size: 2rem;
+      color: #ff9999;
+      margin-bottom: 20px;
+    }
+
+    .current-label {
+      color: #ff3333;
+      font-size: 1.2rem;
+      margin-bottom: 10px;
+      letter-spacing: 2px;
+    }
+
+    #currentScore {
+      font-size: 8rem;
+      color: #ff1a1a;
+      margin-bottom: 40px;
+    }
+
+    button {
+      margin-top: 20px;
+      padding: 12px 30px;
+      font-size: 1rem;
+      font-family: 'Digital-7', monospace;
+      background-color: #ff0000;
+      color: white;
+      border: none;
+      border-radius: 10px;
+      cursor: pointer;
+      transition: transform 0.2s ease;
+    }
+
+    button:hover {
+      transform: scale(1.1);
+      background-color: #ff3333;
+    }
+  </style>
+</head>
+<body>
+  <div class="arcade-frame">
+    <div class="label">HIGHEST SCORE</div>
+    <div id="topScore">0</div>
+
+    <div class="previous-label">PREVIOUS SCORE</div>
+    <div id="previousScore">0</div>
+
+    <div class="current-label">SCORE</div>
+    <div id="currentScore">0</div>
+
+    <button id="resetBtn">RESET</button>
+    <button id="resetTopBtn">RESET Top score</button>
+  </div>
+</body>
+</html>
